@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 
 	"golang.org/x/net/html"
@@ -19,29 +20,51 @@ var (
 	client = &http.Client{
 		Transport: transport,
 	}
+
+	queue = make(chan string)
+    visited = make(map[string]bool)
 )
 
-// TODO: naked return values only in short functions
 func main() {
-	baseURL := "https://sive.rs"
+	baseURL := "https://js.org"
 
+	go func() {
+		queue <- baseURL
+	}()
+
+	for href := range queue {
+        if !visited[href] {
+            crawl(href)
+        }
+	}
 	crawl(baseURL)
 
-	/*
-		links := links(tree)
-		nodes := traverse(tree)
-		pullLinks(nodes)
-		body, err := io.ReadAll(response.Body)
-		checkError(err)
-
-		fmt.Println(string(body))
-	*/
 }
 
-func crawl(url string) {
-	fmt.Printf("crawling url -> %v\n", url)
-	response, err := client.Get(url)
-	checkError(err)
+func fixURL(rawURL string, baseURL string) string {
+	url, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+    fmt.Printf("url: %v\n", url) 
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return ""
+	}
+
+	fixed := base.ResolveReference(url)
+
+	return fixed.String()
+}
+
+func crawl(href string) {
+	fmt.Printf("crawling url -> %v\n", href)
+    visited[href] = true
+	response, err := client.Get(href)
+	if err != nil {
+		fmt.Println(err)
+        return
+	}
 	defer response.Body.Close()
 
 	tree, err := html.Parse(response.Body)
@@ -51,7 +74,11 @@ func crawl(url string) {
 	extractURLs(tree, &urls)
 
 	for _, url := range urls {
-		crawl(url)
+		//crawl(fixURL(url, href))
+		absoluteURL := fixURL(url, href)
+		go func() {
+			queue <- absoluteURL
+		}()
 	}
 }
 
